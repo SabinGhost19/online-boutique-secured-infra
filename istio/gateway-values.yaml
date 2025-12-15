@@ -1,0 +1,99 @@
+# =============================================================================
+# gateway-values.yaml
+# Configurație pentru Istio Ingress Gateway
+# =============================================================================
+# NOTĂ: Acest gateway este OPȚIONAL dacă folosești NGINX Ingress cu Istio sidecar
+# Poate fi folosit în paralel sau ca alternativă la NGINX
+# =============================================================================
+
+# Număr de replici pentru High Availability
+replicaCount: 2
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# Service configuration
+service:
+  # Tipul serviciului
+  # ClusterIP - pentru acces intern (cloudflared va forwarda aici)
+  # LoadBalancer - pentru acces extern direct
+  # NodePort - pentru acces via port pe noduri
+  type: ClusterIP
+  
+  ports:
+    # Port pentru HTTP
+    - port: 80
+      targetPort: 80
+      name: http2
+      protocol: TCP
+    # Port pentru HTTPS
+    - port: 443
+      targetPort: 443
+      name: https
+      protocol: TCP
+    # Port pentru status (health checks)
+    - port: 15021
+      targetPort: 15021
+      name: status-port
+      protocol: TCP
+
+# Resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Pod Anti-Affinity pentru distribuție pe noduri diferite
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app: istio-ingressgateway
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  minAvailable: 1
+
+# Security Context
+securityContext:
+  runAsUser: 1337
+  runAsGroup: 1337
+  runAsNonRoot: true
+  fsGroup: 1337
+
+# Container Security Context
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1337
+
+# Service Account
+serviceAccount:
+  create: true
+  name: istio-ingressgateway-sa
+
+# Labels pentru selectare în VirtualService și Gateway resources
+labels:
+  app: istio-ingressgateway
+  istio: ingressgateway
+
+# Annotations pentru service
+serviceAnnotations: {}
+  # Exemplu pentru cloud providers:
+  # service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  # cloud.google.com/load-balancer-type: Internal

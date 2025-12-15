@@ -1,0 +1,228 @@
+# =============================================================================
+# ingress-develop.yaml
+# Configurație Ingress pentru Online Boutique în develop
+# Funcționează cu NGINX Ingress Controller și Cloudflare Tunnel
+# =============================================================================
+
+---
+# Ingress pentru Frontend
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: online-boutique-ingress
+  namespace: develop
+  annotations:
+    # Specifică NGINX Ingress Controller
+    kubernetes.io/ingress.class: nginx
+    
+    # Redirect HTTP la HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # Forwardează header-uri pentru Istio
+    nginx.ingress.kubernetes.io/proxy-set-headers: "develop/custom-headers"
+    
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    
+    # Enable WebSocket (dacă e necesar)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    
+    # Configurație pentru request body
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    
+    # CORS (dacă e necesar)
+    # nginx.ingress.kubernetes.io/enable-cors: "true"
+    # nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+spec:
+  ingressClassName: nginx
+  rules:
+    # Înlocuiește cu domeniul tău
+    - host: secured-boutique.ggdevs.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+  
+  # TLS configuration (opțional - Cloudflare poate gestiona TLS)
+  # Decomentează dacă vrei TLS terminat în cluster
+  # tls:
+  #   - hosts:
+  #       - shop-dev.your-domain.com
+  #     secretName: online-boutique-tls-secret
+
+---
+# ConfigMap pentru custom headers (necesar pentru Istio tracing)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-headers
+  namespace: develop
+data:
+  # Forward Istio tracing headers
+  X-Request-Id: "$request_id"
+  X-Real-IP: "$remote_addr"
+  X-Forwarded-For: "$proxy_add_x_forwarded_for"
+  X-Forwarded-Proto: "$scheme"
+  # Istio specific headers
+  x-b3-traceid: "$http_x_b3_traceid"
+  x-b3-spanid: "$http_x_b3_spanid"
+  x-b3-parentspanid: "$http_x_b3_parentspanid"
+  x-b3-sampled: "$http_x_b3_sampled"
+  x-b3-flags: "$http_x_b3_flags"
+
+---
+# =============================================================================
+# ALTERNATIVĂ: Istio Gateway + VirtualService
+# Folosește dacă preferi Istio Ingress Gateway în loc de NGINX
+# =============================================================================
+
+# Istio Gateway
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: online-boutique-gateway
+  namespace: develop
+spec:
+  selector:
+    # Selectează Istio Ingress Gateway
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "secured-boutique.ggdevs.site"
+        - "*.your-domain.com"  # Wildcard
+      # Redirect la HTTPS (opțional)
+      # tls:
+      #   httpsRedirect: true
+    
+    # HTTPS port (dacă Istio gestionează TLS)
+    # - port:
+    #     number: 443
+    #     name: https
+    #     protocol: HTTPS
+    #   hosts:
+    #     - "shop-dev.your-domain.com"
+    #   tls:
+    #     mode: SIMPLE
+    #     credentialName: online-boutique-tls
+
+---
+# Istio VirtualService
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: online-boutique-vs
+  namespace: develop
+spec:
+  hosts:
+    - "secured-boutique.ggdevs.site"
+    - "frontend.develop.svc.cluster.local"
+  gateways:
+    - online-boutique-gateway
+    - mesh  # Permite și trafic intern din mesh
+  http:
+    - name: "frontend-route"
+      match:
+        - uri:
+            prefix: "/"
+      route:
+        - destination:
+            host: frontend.develop.svc.cluster.local
+            port:
+              number: 80
+          weight: 100
+      
+      # Retry configuration
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: "5xx,reset,connect-failure"
+      
+      # Timeout
+      timeout: 30s
+      
+      # CORS policy (dacă e necesar)
+      # corsPolicy:
+      #   allowOrigins:
+      #     - exact: "https://your-domain.com"
+      #   allowMethods:
+      #     - GET
+      #     - POST
+      #   allowHeaders:
+      #     - authorization
+      #     - content-type
+      #   maxAge: "24h"
+
+---
+# =============================================================================
+# Cloudflare Tunnel Configuration
+# Configurație pentru cloudflared să pointeze către serviciu
+# =============================================================================
+# NOTĂ: Aceasta este configurația conceptuală
+# Configurația reală se face în Cloudflare Dashboard sau config file
+
+# Exemplu cloudflared config (config.yaml):
+# ---
+# tunnel: your-tunnel-id
+# credentials-file: /etc/cloudflared/credentials.json
+# 
+# ingress:
+#   # Online Boutique - develop
+#   - hostname: shop-dev.your-domain.com
+#     service: http://frontend.develop.svc.cluster.local:80
+#     originRequest:
+#       noTLSVerify: true
+#   
+#   # Kiali (pentru acces extern)
+#   - hostname: kiali.your-domain.com
+#     service: http://kiali.istio-system.svc.cluster.local:20001
+#   
+#   # Grafana
+#   - hostname: grafana.your-domain.com
+#     service: http://grafana.monitoring.svc.cluster.local:80
+#   
+#   # ArgoCD
+#   - hostname: argocd.your-domain.com
+#     service: https://argocd-server.argocd.svc.cluster.local:443
+#     originRequest:
+#       noTLSVerify: true
+#   
+#   # Catch-all
+#   - service: http_status:404
+# ---
+
+# Dacă cloudflared rulează în cluster, s-ar putea să trebuiască 
+# să actualizezi NetworkPolicy-ul pentru a permite traficul:
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cloudflared-to-frontend
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Permite de la namespace-ul cloudflared (ajustează după setup)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflare-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflared
+      ports:
+        - protocol: TCP
+          port: 8080

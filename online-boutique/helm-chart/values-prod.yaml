@@ -1,0 +1,25 @@
+# values-prod.yaml
+# Configurație specifică pentru mediul de producție
+
+frontend:
+  externalService: false
+  platform: local
+  virtualService:
+    create: true
+    hosts:
+      - "shop.ggdevs.site" # Domeniu de producție
+    gateway:
+      name: online-boutique-gateway
+      namespace: prod
+      labelKey: istio
+      labelValue: ingressgateway
+
+# Activăm NetworkPolicies pentru securitate
+networkPolicies:
+  create: true
+
+# Activăm Sidecars
+sidecars:
+  create: true
+
+# Resurse standard (deja definite în values.yaml default, dar putem face override aici dacă e cazul)

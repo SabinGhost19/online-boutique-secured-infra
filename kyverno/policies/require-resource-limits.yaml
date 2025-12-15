@@ -1,0 +1,173 @@
+# =============================================================================
+# require-resource-limits.yaml
+# Forțează setarea de resource requests și limits pe toate containerele
+# =============================================================================
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Forțează toate containerele să aibă definite CPU și memory requests 
+      și limits. Aceasta previne resource starvation și permite scheduling
+      mai bun.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    # =========================================================================
+    # RULE: Require CPU și Memory Limits
+    # =========================================================================
+    - name: require-cpu-memory-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - kyverno
+                - argocd
+                - monitoring-online-boutique
+      validate:
+        message: >-
+          CPU și memory requests/limits sunt obligatorii pentru toate 
+          containerele. Adaugă resources.requests.cpu, resources.requests.memory,
+          resources.limits.cpu, resources.limits.memory.
+        pattern:
+          spec:
+            containers:
+              # Exclude istio-proxy care are resurse gestionate de Istio
+              - (name): "!istio-proxy"
+                resources:
+                  requests:
+                    # ?* înseamnă că valoarea trebuie să existe și să nu fie goală
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"
+
+---
+# =============================================================================
+# POLITICĂ: Require limits pentru init containers
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-init-container-limits
+  annotations:
+    policies.kyverno.io/title: Require Init Container Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-init-container-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      preconditions:
+        all:
+          # Aplică doar dacă există init containers
+          - key: "{{ request.object.spec.initContainers[] | length(@) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: "Init containers trebuie să aibă resource limits definite."
+        pattern:
+          spec:
+            initContainers:
+              # Exclude istio-init
+              - (name): "!istio-init"
+                resources:
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"
+
+---
+# =============================================================================
+# POLITICĂ: Enforce Maximum Limits
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: enforce-max-resource-limits
+  annotations:
+    policies.kyverno.io/title: Enforce Maximum Resource Limits
+    policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Previne containere cu limite de resurse excesive care ar putea
+      afecta stabilitatea clusterului.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: max-cpu-limit
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+      validate:
+        message: >-
+          CPU limit maxim permis este 4 cores. 
+          Limita curentă: {{ request.object.spec.containers[0].resources.limits.cpu }}
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    # Permite maxim 4 CPU cores
+                    =(cpu): "<=4"
+    
+    - name: max-memory-limit
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+      validate:
+        message: >-
+          Memory limit maxim permis este 8Gi.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    # Permite maxim 8Gi RAM
+                    =(memory): "<=8Gi"

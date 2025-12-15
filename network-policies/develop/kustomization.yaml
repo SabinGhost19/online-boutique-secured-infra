@@ -1,0 +1,21 @@
+# =============================================================================
+# kustomization.yaml pentru NetworkPolicies - develop
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: develop
+
+# Resurse de bază (comune)
+resources:
+  - ../base/default-deny-all.yaml
+  - ../base/allow-dns.yaml
+  - ../base/allow-istio-control-plane.yaml
+  # Politici specifice Online Boutique
+  - online-boutique-policies.yaml
+
+# Labels comune pentru toate resursele
+commonLabels:
+  environment: develop
+  managed-by: kustomize

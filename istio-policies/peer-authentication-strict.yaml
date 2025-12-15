@@ -1,0 +1,46 @@
+# =============================================================================
+# peer-authentication-strict.yaml
+# Forțează mTLS STRICT pentru întregul mesh
+# =============================================================================
+
+---
+# Mesh-wide strict mTLS
+# APLICĂ ÎN ISTIO-SYSTEM pentru efect global
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: peer-authentication
+    app.kubernetes.io/component: security
+spec:
+  # Spec gol = se aplică la tot mesh-ul
+  mtls:
+    # STRICT = Toate conexiunile TREBUIE să fie mTLS
+    # - Conexiunile plain-text vor fi respinse
+    # - Garantează criptare end-to-end între servicii
+    mode: STRICT
+
+---
+# PeerAuthentication specifică pentru namespace develop
+# Opțional - pentru override sau configurație specifică
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: develop
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# PeerAuthentication pentru namespace prod
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: prod
+spec:
+  mtls:
+    mode: STRICT

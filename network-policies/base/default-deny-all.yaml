@@ -1,0 +1,44 @@
+# =============================================================================
+# default-deny-all.yaml
+# CRITICĂ: Aplică default deny pentru tot traficul
+# Aceasta este baza pentru modelul Zero Trust
+# =============================================================================
+# APLICĂ PRIMA în fiecare namespace de aplicații!
+# =============================================================================
+
+---
+# Default deny pentru namespace develop
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: develop
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: security
+    policy-type: default-deny
+spec:
+  # podSelector gol = se aplică la TOATE podurile din namespace
+  podSelector: {}
+  
+  # Specifică ambele tipuri de politici
+  policyTypes:
+    - Ingress  # Blochează tot traficul de intrare
+    - Egress   # Blochează tot traficul de ieșire
+
+---
+# Default deny pentru namespace prod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: security
+    policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

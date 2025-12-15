@@ -1,0 +1,268 @@
+# =============================================================================
+# ArgoCD Projects
+# Definesc permisiuni și restricții pentru aplicații
+# =============================================================================
+
+---
+# =============================================================================
+# PROJECT: infrastructure
+# Pentru componente de infrastructură (Istio, Kyverno, Monitoring)
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: infrastructure
+  namespace: argocd
+  # Finalizator pentru a preveni ștergerea accidentală
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Componente de infrastructură (Istio, Kyverno, Monitoring)"
+
+  # Repository-uri permise
+  sourceRepos:
+    - '*'  # Permite toate - restricționează în producție
+    # - 'https://github.com/YOUR-ORG/gitops-repo.git'
+    # - 'https://istio-release.storage.googleapis.com/charts'
+    # - 'https://kyverno.github.io/kyverno/'
+    # - 'https://prometheus-community.github.io/helm-charts'
+  
+  # Destinații permise (clustere și namespace-uri)
+  destinations:
+    - namespace: istio-system
+      server: https://kubernetes.default.svc
+    - namespace: istio-ingress
+      server: https://kubernetes.default.svc
+    - namespace: kyverno
+      server: https://kubernetes.default.svc
+    - namespace: monitoring-online-boutique
+      server: https://kubernetes.default.svc
+    - namespace: kube-system
+      server: https://kubernetes.default.svc
+  
+  # Cluster resource whitelist
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  # Namespace resource whitelist
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  # Roluri pentru project
+  roles:
+    - name: admin
+      description: "Admin role pentru infrastructure"
+      policies:
+        - p, proj:infrastructure:admin, applications, *, infrastructure/*, allow
+      groups:
+        - admin
+    
+    - name: readonly
+      description: "Read-only access"
+      policies:
+        - p, proj:infrastructure:readonly, applications, get, infrastructure/*, allow
+      groups:
+        - viewer
+
+---
+# =============================================================================
+# PROJECT: develop
+# Pentru mediul de development
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: develop
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Mediu de development - Online Boutique"
+  
+  # Repository-uri permise
+  sourceRepos:
+    - '*'
+    # - 'https://github.com/YOUR-ORG/gitops-repo.git'
+    # - 'https://github.com/GoogleCloudPlatform/microservices-demo.git'
+  
+  # Destinații - doar namespace-ul develop
+  destinations:
+    - namespace: develop
+      server: https://kubernetes.default.svc
+  
+  # NU permite cluster resources în develop
+  clusterResourceWhitelist: []
+  
+  # Namespace resources permise
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    # Istio resources
+    - group: networking.istio.io
+      kind: VirtualService
+    - group: networking.istio.io
+      kind: DestinationRule
+    - group: networking.istio.io
+      kind: Gateway
+    - group: security.istio.io
+      kind: AuthorizationPolicy
+    - group: security.istio.io
+      kind: PeerAuthentication
+    # Sealed Secrets
+    - group: bitnami.com
+      kind: SealedSecret
+  
+  # Roluri
+  roles:
+    - name: developer
+      description: "Developer role - full access în develop"
+      policies:
+        - p, proj:develop:developer, applications, *, develop/*, allow
+      groups:
+        - developer
+    
+    - name: readonly
+      description: "Read-only access"
+      policies:
+        - p, proj:develop:readonly, applications, get, develop/*, allow
+      groups:
+        - viewer
+
+---
+# =============================================================================
+# PROJECT: prod
+# Pentru mediul de producție - restricții mai stricte
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Mediu de producție - Online Boutique (restricții stricte)"
+  
+  # Repository-uri permise - mai restrictiv
+  sourceRepos:
+    - '*'
+    # În producție, specifică exact repository-urile:
+    # - 'https://github.com/YOUR-ORG/gitops-repo.git'
+  
+  # Destinații - doar namespace-ul prod
+  destinations:
+    - namespace: prod
+      server: https://kubernetes.default.svc
+  
+  # NU permite cluster resources în prod
+  clusterResourceWhitelist: []
+  
+  # Namespace resources permise (identic cu develop)
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.istio.io
+      kind: VirtualService
+    - group: networking.istio.io
+      kind: DestinationRule
+    - group: networking.istio.io
+      kind: Gateway
+    - group: security.istio.io
+      kind: AuthorizationPolicy
+    - group: security.istio.io
+      kind: PeerAuthentication
+    - group: bitnami.com
+      kind: SealedSecret
+  
+  # Sync windows - permite sync doar în anumite perioade
+  # Decomentează pentru a restricționa deployments
+  # syncWindows:
+  #   - kind: allow
+  #     schedule: '0 10-18 * * 1-5'  # Luni-Vineri, 10:00-18:00
+  #     duration: 8h
+  #     applications:
+  #       - '*'
+  #   - kind: deny
+  #     schedule: '0 0 * * 0'  # Duminică
+  #     duration: 24h
+  #     applications:
+  #       - '*'
+  
+  # Roluri
+  roles:
+    - name: admin
+      description: "Admin role pentru prod - deploy restricționat"
+      policies:
+        - p, proj:prod:admin, applications, get, prod/*, allow
+        - p, proj:prod:admin, applications, sync, prod/*, allow
+        - p, proj:prod:admin, applications, create, prod/*, allow
+        - p, proj:prod:admin, applications, update, prod/*, allow
+        # NU permite delete în prod
+        - p, proj:prod:admin, applications, delete, prod/*, deny
+      groups:
+        - admin
+    
+    - name: readonly
+      description: "Read-only access pentru prod"
+      policies:
+        - p, proj:prod:readonly, applications, get, prod/*, allow
+      groups:
+        - developer
+        - viewer
+
+---
+# =============================================================================
+# PROJECT: default (override)
+# Restricționează project-ul default
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+spec:
+  description: "Default project - restricționat"
+  
+  sourceRepos: []  # Nu permite nimic în default
+  destinations: [] # Nu permite nimic în default
+  
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist: []

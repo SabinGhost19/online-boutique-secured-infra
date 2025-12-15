@@ -1,0 +1,493 @@
+# =============================================================================
+# online-boutique-policies.yaml (develop)
+# NetworkPolicies specifice pentru fiecare serviciu din Online Boutique
+# =============================================================================
+# Aceste politici implementează least-privilege la nivel de rețea (L3/L4)
+# Complementează Istio AuthorizationPolicies care operează la L7
+# =============================================================================
+
+---
+# =============================================================================
+# FRONTEND
+# Punctul de intrare - acceptă trafic de la Ingress și loadgenerator
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-netpol
+  namespace: develop
+  labels:
+    app: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # De la NGINX Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # De la loadgenerator (pentru testing)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: loadgenerator
+      ports:
+        - protocol: TCP
+          port: 8080
+    # De la Istio ingress gateway (dacă folosești)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Către productcatalogservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: productcatalogservice
+      ports:
+        - protocol: TCP
+          port: 3550
+    # Către cartservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cartservice
+      ports:
+        - protocol: TCP
+          port: 7070
+    # Către currencyservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: currencyservice
+      ports:
+        - protocol: TCP
+          port: 7000
+    # Către recommendationservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: recommendationservice
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Către adservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: adservice
+      ports:
+        - protocol: TCP
+          port: 9555
+    # Către shippingservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: shippingservice
+      ports:
+        - protocol: TCP
+          port: 50051
+    # Către checkoutservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 5050
+
+---
+# =============================================================================
+# CHECKOUTSERVICE
+# Orchestrează checkout flow - comunică cu multe servicii
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: checkoutservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: checkoutservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Doar de la frontend
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 5050
+  egress:
+    # Către cartservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cartservice
+      ports:
+        - protocol: TCP
+          port: 7070
+    # Către productcatalogservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: productcatalogservice
+      ports:
+        - protocol: TCP
+          port: 3550
+    # Către currencyservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: currencyservice
+      ports:
+        - protocol: TCP
+          port: 7000
+    # Către emailservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: emailservice
+      ports:
+        - protocol: TCP
+          port: 5000
+    # Către paymentservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: paymentservice
+      ports:
+        - protocol: TCP
+          port: 50051
+    # Către shippingservice
+    - to:
+        - podSelector:
+            matchLabels:
+              app: shippingservice
+      ports:
+        - protocol: TCP
+          port: 50051
+
+---
+# =============================================================================
+# CARTSERVICE
+# Gestionează coșul de cumpărături - comunică cu Redis
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cartservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: cartservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # De la frontend și checkoutservice
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 7070
+  egress:
+    # Doar către Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-cart
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# =============================================================================
+# REDIS-CART
+# Bază de date pentru cart - doar de la cartservice
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-cart-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-cart
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # DOAR de la cartservice - foarte restrictiv
+    - from:
+        - podSelector:
+            matchLabels:
+              app: cartservice
+      ports:
+        - protocol: TCP
+          port: 6379
+  # Redis nu are nevoie de egress (doar răspunde la requests)
+  egress: []
+
+---
+# =============================================================================
+# PRODUCTCATALOGSERVICE
+# Catalog produse - accesat de mai multe servicii
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: productcatalogservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: productcatalogservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+        - podSelector:
+            matchLabels:
+              app: recommendationservice
+      ports:
+        - protocol: TCP
+          port: 3550
+  # Productcatalog nu are dependențe externe
+  egress: []
+
+---
+# =============================================================================
+# CURRENCYSERVICE
+# Conversie valutară - accesat de frontend și checkout
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: currencyservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: currencyservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 7000
+  egress: []
+
+---
+# =============================================================================
+# RECOMMENDATIONSERVICE
+# Recomandări - accesează productcatalog
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recommendationservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: recommendationservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Către productcatalogservice pentru a obține produse
+    - to:
+        - podSelector:
+            matchLabels:
+              app: productcatalogservice
+      ports:
+        - protocol: TCP
+          port: 3550
+
+---
+# =============================================================================
+# ADSERVICE
+# Advertising - doar de la frontend
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: adservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: adservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 9555
+  egress: []
+
+---
+# =============================================================================
+# SHIPPINGSERVICE
+# Calcul shipping - de la frontend și checkout
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shippingservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: shippingservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 50051
+  egress: []
+
+---
+# =============================================================================
+# PAYMENTSERVICE
+# Procesare plăți - doar de la checkout
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: paymentservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: paymentservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # DOAR de la checkoutservice - foarte sensibil
+    - from:
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 50051
+  egress: []
+
+---
+# =============================================================================
+# EMAILSERVICE
+# Trimitere email-uri - doar de la checkout
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: emailservice-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: emailservice
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: checkoutservice
+      ports:
+        - protocol: TCP
+          port: 5000
+  # În producție, emailservice ar putea avea nevoie de egress către SMTP
+  egress: []
+
+---
+# =============================================================================
+# LOADGENERATOR
+# Generator de trafic pentru testing - doar către frontend
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loadgenerator-netpol
+  namespace: develop
+spec:
+  podSelector:
+    matchLabels:
+      app: loadgenerator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # Doar către frontend
+    - to:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080

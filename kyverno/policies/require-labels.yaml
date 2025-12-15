@@ -1,0 +1,189 @@
+# =============================================================================
+# require-labels.yaml
+# Forțează label-uri standard pe resurse
+# =============================================================================
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod, Deployment, Service
+    policies.kyverno.io/description: >-
+      Forțează label-uri standard Kubernetes pentru toate resursele.
+      Aceasta ajută la organizare, monitoring și debugging.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    # =========================================================================
+    # RULE: Require app label on Pods
+    # =========================================================================
+    - name: require-app-label-pods
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - kyverno
+                - argocd
+      validate:
+        message: >-
+          Label 'app' este obligatoriu pentru toate Pod-urile.
+          Adaugă: metadata.labels.app
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+
+    # =========================================================================
+    # RULE: Require labels on Deployments
+    # =========================================================================
+    - name: require-deployment-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+                - argocd
+      validate:
+        message: >-
+          Deployments trebuie să aibă label-urile: app, version.
+          Acestea sunt necesare pentru Istio traffic management.
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+          spec:
+            template:
+              metadata:
+                labels:
+                  app: "?*"
+                  # version este recomandat pentru Istio
+                  version: "?*"
+
+    # =========================================================================
+    # RULE: Require labels on Services
+    # =========================================================================
+    - name: require-service-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Service
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      validate:
+        message: "Services trebuie să aibă label 'app'."
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+
+---
+# =============================================================================
+# POLITICĂ: Auto-generate labels (Mutate)
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-labels
+  annotations:
+    policies.kyverno.io/title: Add Default Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: >-
+      Adaugă automat label-uri default dacă lipsesc.
+spec:
+  # Mutate policy - modifică resursele
+  rules:
+    - name: add-team-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - Service
+              namespaces:
+                - develop
+                - prod
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              # Adaugă label de environment bazat pe namespace
+              +(environment): "{{ request.namespace }}"
+              # Adaugă managed-by label
+              +(app.kubernetes.io/managed-by): "kyverno"
+
+---
+# =============================================================================
+# POLITICĂ: Require Istio Labels pentru traffic management
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-istio-labels
+  annotations:
+    policies.kyverno.io/title: Require Istio Labels
+    policies.kyverno.io/category: Istio
+    policies.kyverno.io/description: >-
+      Forțează label-uri necesare pentru Istio traffic management
+      (app și version) în namespace-urile cu Istio injection.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-istio-pod-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - develop
+                - prod
+      # Exclude podurile generate de Istio
+      exclude:
+        any:
+          - resources:
+              selector:
+                matchLabels:
+                  istio: pilot
+          - resources:
+              selector:
+                matchLabels:
+                  app: istio-ingressgateway
+      validate:
+        message: >-
+          Pentru Istio traffic management, Pod-urile trebuie să aibă
+          label-urile 'app' și 'version'. Aceste label-uri sunt folosite
+          pentru routing, canary deployments și observabilitate în Kiali.
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+              version: "?*"

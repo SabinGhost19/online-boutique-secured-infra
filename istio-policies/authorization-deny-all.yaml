@@ -1,0 +1,66 @@
+# =============================================================================
+# authorization-deny-all.yaml
+# Implementează Zero Trust - deny implicit pentru tot traficul
+# =============================================================================
+# IMPORTANT: După aplicarea acestei politici, NICIUN trafic nu va fi permis
+# până nu creezi politici ALLOW explicite pentru fiecare serviciu!
+# =============================================================================
+
+---
+# Deny-all mesh-wide
+# ATENȚIE: Aceasta va bloca TOT traficul în mesh!
+# Aplică DOAR după ce ai politicile ALLOW pregătite
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: istio-system
+spec:
+  # Spec gol = deny all
+  # Aceasta acționează ca default deny pentru întregul mesh
+  {}
+
+---
+# Deny-all pentru namespace develop
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: develop
+spec:
+  {}
+
+---
+# Deny-all pentru namespace prod
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: prod
+spec:
+  {}
+
+---
+# =============================================================================
+# POLITICĂ SPECIALĂ: Permite traficul de la Istio Ingress Gateway
+# Aceasta este necesară pentru a permite traficul extern
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # Permite de la orice sursă externă
+            notNamespaces: []
+      to:
+        - operation:
+            # Permite GET, POST pentru frontend
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]

@@ -1,0 +1,65 @@
+# =============================================================================
+# allow-dns.yaml
+# Permite accesul la DNS (CoreDNS) pentru toate podurile
+# ESENȚIALĂ: Fără DNS, podurile nu pot rezolva nume de servicii
+# =============================================================================
+
+---
+# Allow DNS pentru develop
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: develop
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: dns
+    policy-type: allow-egress
+spec:
+  # Se aplică la toate podurile
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Permite DNS către kube-system (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Allow DNS pentru prod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: dns
+    policy-type: allow-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

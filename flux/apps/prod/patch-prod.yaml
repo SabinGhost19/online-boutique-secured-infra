@@ -1,0 +1,22 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: online-boutique
+  namespace: flux-system
+spec:
+  ref:
+    branch: main
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: online-boutique
+  namespace: flux-system
+spec:
+  targetNamespace: prod
+  chart:
+    spec:
+      sourceRef:
+        name: online-boutique-prod
+      valuesFiles:
+        - values-prod.yaml

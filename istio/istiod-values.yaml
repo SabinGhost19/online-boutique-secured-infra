@@ -1,0 +1,295 @@
+# =============================================================================
+# istiod-values.yaml
+# Configurație Production-Ready pentru Istio Control Plane (istiod)
+# =============================================================================
+# NOTĂ: Fiecare setare este comentată cu explicații detaliate
+# =============================================================================
+
+# =============================================================================
+# PILOT (ISTIOD) - Control Plane Principal
+# =============================================================================
+pilot:
+  # ---------------------------------------------------------------------------
+  # REPLICI ȘI AUTOSCALING
+  # ---------------------------------------------------------------------------
+  
+  # Numărul de replici pentru istiod
+  # Pentru producție: minim 2-3 pentru High Availability
+  # Pentru development: 1 este suficient
+  replicaCount: 2
+  
+  # Autoscaling - permite scalarea automată bazată pe load
+  autoscaleEnabled: true
+  autoscaleMin: 2        # Minim 2 replici în orice moment
+  autoscaleMax: 5        # Maxim 5 replici sub load intens
+  
+  # Targeturi pentru autoscaling (când să scaleze)
+  cpu:
+    targetAverageUtilization: 80   # Scalează când CPU > 80%
+  memory:
+    targetAverageUtilization: 80   # Scalează când Memory > 80%
+  
+  # ---------------------------------------------------------------------------
+  # RESURSE
+  # ---------------------------------------------------------------------------
+  resources:
+    requests:
+      # Request-uri - resurse garantate pentru pod
+      cpu: 500m          # 0.5 CPU cores
+      memory: 2Gi        # 2 GB RAM
+    limits:
+      # Limite - maxim ce poate consuma
+      cpu: 1000m         # 1 CPU core
+      memory: 4Gi        # 4 GB RAM
+  
+  # ---------------------------------------------------------------------------
+  # TOLERATIONS ȘI NODE AFFINITY
+  # ---------------------------------------------------------------------------
+  
+  # Tolerations - permite rularea pe noduri cu taint-uri specifice
+  tolerations: []
+  # Exemplu pentru noduri dedicate:
+  # - key: "dedicated"
+  #   operator: "Equal"
+  #   value: "istio"
+  #   effect: "NoSchedule"
+  
+  # Affinity - controlează pe ce noduri rulează istiod
+  affinity:
+    # Anti-affinity: distribuie podurile istiod pe noduri diferite
+    # CRITIC pentru High Availability
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - istiod
+            # Distribuie pe noduri diferite (hostname)
+            topologyKey: kubernetes.io/hostname
+  
+  # TopologySpreadConstraints - distribuție uniformă
+  topologySpreadConstraints:
+    - maxSkew: 1                              # Diferența maximă între zone
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway       # Nu bloca scheduling-ul
+      labelSelector:
+        matchLabels:
+          app: istiod
+  
+  # ---------------------------------------------------------------------------
+  # POD DISRUPTION BUDGET
+  # ---------------------------------------------------------------------------
+  # Asigură că cel puțin 1 pod rămâne disponibil în timpul maintenance
+  podDisruptionBudget:
+    minAvailable: 1
+  
+  # ---------------------------------------------------------------------------
+  # ENVIRONMENT VARIABLES
+  # ---------------------------------------------------------------------------
+  env:
+    # Activează load balancing bazat pe localitate (zone-aware)
+    PILOT_ENABLE_LOCALITY_LOAD_BALANCING: "true"
+    
+    # Filtrează configurația pentru gateway-uri
+    PILOT_FILTER_GATEWAY_CLUSTER_CONFIG: "true"
+    
+    # Timeout pentru HTTP/1.0 (milisecunde)
+    PILOT_HTTP10: "1"
+    
+    # Activează analiza istioctl
+    PILOT_ENABLE_ANALYSIS: "true"
+
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
+global:
+  # Namespace-ul Istio
+  istioNamespace: istio-system
+  
+  # ---------------------------------------------------------------------------
+  # LOGGING
+  # ---------------------------------------------------------------------------
+  logging:
+    # Level de logging: trace, debug, info, warn, error, fatal, panic
+    level: "default:info"
+  
+  # ---------------------------------------------------------------------------
+  # POD DISRUPTION BUDGET GLOBAL
+  # ---------------------------------------------------------------------------
+  defaultPodDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  # ---------------------------------------------------------------------------
+  # PROXY SETTINGS (pentru sidecars injectate în aplicații)
+  # ---------------------------------------------------------------------------
+  proxy:
+    # Resursele pentru sidecar proxy (istio-proxy container)
+    resources:
+      requests:
+        cpu: 100m        # Request modest pentru sidecar
+        memory: 128Mi
+      limits:
+        cpu: 500m        # Limită rezonabilă
+        memory: 256Mi
+    
+    # Numărul de worker threads pentru Envoy proxy
+    # 0 = auto-detect bazat pe CPU-uri disponibile
+    # 2 = valoare fixă pentru predictibilitate
+    concurrency: 2
+    
+    # NU rulează proxy-ul în mod privilegiat
+    privileged: false
+    
+    # IMPORTANT: Așteaptă ca proxy-ul să fie ready înainte de a porni aplicația
+    # Previne race conditions unde aplicația pornește înainte ca mesh-ul să fie ready
+    holdApplicationUntilProxyStarts: true
+    
+    # Lifecycle hooks pentru graceful shutdown
+    lifecycle:
+      preStop:
+        exec:
+          # Așteaptă 5 secunde pentru a permite conexiunilor să se închidă
+          command: ["/bin/sh", "-c", "sleep 5"]
+    
+    # Image pentru proxy (folosește versiunea implicită)
+    # image: auto
+    
+    # Log level pentru proxy
+    logLevel: warning
+    
+    # Component log level (mai granular)
+    componentLogLevel: "misc:error"
+  
+  # ---------------------------------------------------------------------------
+  # PROXY INIT CONTAINER SETTINGS
+  # ---------------------------------------------------------------------------
+  proxy_init:
+    # Resurse pentru init container (configurează iptables)
+    resources:
+      requests:
+        cpu: 10m
+        memory: 10Mi
+      limits:
+        cpu: 100m
+        memory: 50Mi
+
+# =============================================================================
+# MESH CONFIG - Configurația rețelei de servicii
+# =============================================================================
+meshConfig:
+  # ---------------------------------------------------------------------------
+  # DEFAULT PROXY CONFIG
+  # ---------------------------------------------------------------------------
+  defaultConfig:
+    # Tracing configuration
+    tracing:
+      # Sampling rate: 100 = 100% din requests sunt trace-uite
+      # În producție, reduceți la 1-10% pentru performanță
+      sampling: 100.0
+      # Zipkin address (Jaeger este compatibil Zipkin)
+      zipkin:
+        address: "jaeger-collector.monitoring-online-boutique:9411"
+    
+    # Access Logging - loguri pentru fiecare request
+    # /dev/stdout trimite la stdout pentru colectare de logging agents
+    accessLogFile: /dev/stdout
+    
+    # Format JSON pentru parsing ușor
+    accessLogEncoding: JSON
+    
+    # Metadata pentru proxy
+    proxyMetadata:
+      # Activează DNS capture - proxy-ul interceptează DNS queries
+      ISTIO_META_DNS_CAPTURE: "true"
+      # Auto-allocate IPs pentru ServiceEntry-uri
+      ISTIO_META_DNS_AUTO_ALLOCATE: "true"
+  
+  # ---------------------------------------------------------------------------
+  # mTLS CONFIGURATION
+  # ---------------------------------------------------------------------------
+  
+  # CRITICAL: Activează auto mTLS
+  # Când true, Istio încearcă automat mTLS între servicii din mesh
+  enableAutoMtls: true
+  
+  # Trust domain pentru certificate SPIFFE
+  # Formatul identității: spiffe://cluster.local/ns/{namespace}/sa/{service-account}
+  trustDomain: cluster.local
+  
+  # ---------------------------------------------------------------------------
+  # ROOT NAMESPACE
+  # ---------------------------------------------------------------------------
+  # Namespace-ul root pentru politici globale
+  # Politicile din acest namespace se aplică la tot mesh-ul
+  rootNamespace: istio-system
+  
+  # ---------------------------------------------------------------------------
+  # OUTBOUND TRAFFIC POLICY
+  # ---------------------------------------------------------------------------
+  # Controlează ce se întâmplă cu traficul către destinații necunoscute
+  outboundTrafficPolicy:
+    # REGISTRY_ONLY = permite doar trafic către servicii înregistrate
+    #   - Zero-trust approach
+    #   - Blochează conexiuni către IP-uri/hosts necunoscute
+    #   - RECOMANDAT pentru securitate
+    # ALLOW_ANY = permite trafic către orice destinație
+    #   - Mai permisiv
+    #   - Util pentru migrare graduală
+    mode: REGISTRY_ONLY
+  
+  # ---------------------------------------------------------------------------
+  # PROMETHEUS INTEGRATION
+  # ---------------------------------------------------------------------------
+  # Permite Prometheus să colecteze metrici merged de la sidecars și aplicații
+  enablePrometheusMerge: true
+  
+  # ---------------------------------------------------------------------------
+  # INGRESS SETTINGS
+  # ---------------------------------------------------------------------------
+  ingressClass: istio
+  ingressService: istio-ingressgateway
+  ingressControllerMode: STRICT
+
+# =============================================================================
+# SIDECAR INJECTOR WEBHOOK
+# =============================================================================
+sidecarInjectorWebhook:
+  # NU injecta automat în toate namespace-urile
+  # Fiecare namespace trebuie să aibă label: istio-injection=enabled
+  enableNamespacesByDefault: false
+  
+  # Rescrie HTTP probes pentru a trece prin proxy
+  # Important pentru liveness/readiness checks în mesh
+  rewriteAppHTTPProbe: true
+  
+  # Injection URL template
+  injectionURL: "/inject"
+
+# =============================================================================
+# TELEMETRY V2 (metrici îmbunătățite)
+# =============================================================================
+telemetry:
+  enabled: true
+  v2:
+    enabled: true
+    # Activează metrici Prometheus
+    prometheus:
+      enabled: true
+    # Activează metrici Stackdriver (pentru GCP)
+    stackdriver:
+      enabled: false
+
+# =============================================================================
+# SECURITY SETTINGS ADIȚIONALE
+# =============================================================================
+
+# Revision pentru multi-version support
+revision: ""
+
+# Owner reference pentru garbage collection
+ownerName: ""

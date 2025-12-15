@@ -1,0 +1,165 @@
+# =============================================================================
+# grafana-values.yaml
+# Configurație Grafana cu dashboards pentru Istio
+# =============================================================================
+
+# Admin credentials
+adminUser: admin
+# Parola va fi generată automat și stocată în secret
+# Pentru a seta o parolă fixă (NU recomandat în producție):
+# adminPassword: "your-secure-password"
+
+# Persistence
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+# Configurare datasource Prometheus
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        # URL-ul serviciului Prometheus
+        url: http://prometheus-server.monitoring-online-boutique.svc.cluster.local:80
+        access: proxy
+        isDefault: true
+        editable: false
+      
+      # Datasource pentru Jaeger (tracing)
+      - name: Jaeger
+        type: jaeger
+        url: http://tracing.istio-system.svc.cluster.local:16686
+        access: proxy
+        editable: false
+
+# Dashboard provisioning
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'istio'
+        orgId: 1
+        folder: 'Istio'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/istio
+      - name: 'kubernetes'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+
+# Dashboards din Grafana.com
+dashboards:
+  istio:
+    # Istio Mesh Dashboard
+    istio-mesh:
+      gnetId: 7639
+      revision: 194
+      datasource: Prometheus
+    
+    # Istio Service Dashboard
+    istio-service:
+      gnetId: 7636
+      revision: 194
+      datasource: Prometheus
+    
+    # Istio Workload Dashboard
+    istio-workload:
+      gnetId: 7630
+      revision: 194
+      datasource: Prometheus
+    
+    # Istio Control Plane Dashboard
+    istio-control-plane:
+      gnetId: 7645
+      revision: 194
+      datasource: Prometheus
+    
+    # Istio Performance Dashboard
+    istio-performance:
+      gnetId: 11829
+      revision: 194
+      datasource: Prometheus
+
+  kubernetes:
+    # Kubernetes Cluster Overview
+    k8s-cluster:
+      gnetId: 6417
+      revision: 1
+      datasource: Prometheus
+    
+    # Kubernetes Pods
+    k8s-pods:
+      gnetId: 6879
+      revision: 1
+      datasource: Prometheus
+
+# Plugins suplimentare
+plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
+
+# Grafana.ini configuration
+grafana.ini:
+  server:
+    root_url: "%(protocol)s://%(domain)s/"
+  
+  # Disable analytics
+  analytics:
+    check_for_updates: false
+    reporting_enabled: false
+  
+  # Security
+  security:
+    admin_user: admin
+    disable_gravatar: true
+  
+  # Disable user signup
+  users:
+    allow_sign_up: false
+    allow_org_create: false
+  
+  # Auth (pentru development, anonymous access)
+  # În producție, configurați OAuth sau altă metodă
+  auth.anonymous:
+    enabled: false
+  
+  # Logging
+  log:
+    mode: console
+    level: info
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Ingress (opțional - pentru acces extern)
+ingress:
+  enabled: false
+  # Activează pentru acces extern:
+  # enabled: true
+  # ingressClassName: nginx
+  # hosts:
+  #   - grafana.your-domain.com
+  # tls:
+  #   - secretName: grafana-tls
+  #     hosts:
+  #       - grafana.your-domain.com

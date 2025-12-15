@@ -1,0 +1,182 @@
+# =============================================================================
+# restrict-registries.yaml
+# Restricționează registry-urile de imagini permise
+# =============================================================================
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Restricționează imaginile la registry-uri aprobate pentru a preveni
+      utilizarea de imagini nesigure sau malițioase.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    # =========================================================================
+    # RULE: Validate Image Registry pentru containere principale
+    # =========================================================================
+    - name: validate-image-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - istio-system
+                - kyverno
+                - argocd
+                - monitoring-online-boutique
+      validate:
+        message: >-
+          Imaginile trebuie să provină din registry-uri aprobate:
+          - gcr.io/google-samples/* (Online Boutique)
+          - docker.io/istio/* (Istio)
+          - docker.io/library/* (Imagini oficiale Docker)
+          - ghcr.io/* (GitHub Container Registry)
+          - quay.io/* (Red Hat Quay)
+          - registry.k8s.io/* (Kubernetes official)
+          
+          Imagine curentă: {{ request.object.spec.containers[].image }}
+        pattern:
+          spec:
+            containers:
+              - image: >-
+                  gcr.io/google-samples/* | 
+                  gcr.io/microservices-demo/* |
+                  gcr.io/google_containers/* |
+                  docker.io/istio/* |
+                  docker.io/library/* |
+                  docker.io/redis:* |
+                  docker.io/busybox:* |
+                  docker.io/nginx:* |
+                  ghcr.io/* |
+                  quay.io/* |
+                  registry.k8s.io/* |
+                  redis:* |
+                  busybox:* |
+                  nginx:*
+
+    # =========================================================================
+    # RULE: Validate Init Container Registries
+    # =========================================================================
+    - name: validate-init-container-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.initContainers[] | length(@) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: "Init container images trebuie să provină din registry-uri aprobate."
+        pattern:
+          spec:
+            initContainers:
+              - image: >-
+                  gcr.io/* |
+                  docker.io/* |
+                  ghcr.io/* |
+                  quay.io/* |
+                  registry.k8s.io/*
+
+---
+# =============================================================================
+# POLITICĂ: Disallow Latest Tag
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Interzice utilizarea tag-ului 'latest' pentru imagini.
+      Tag-ul 'latest' nu este determinist și poate cauza probleme
+      de reproducibilitate.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      validate:
+        message: >-
+          Utilizarea tag-ului ':latest' este interzisă. 
+          Folosește un tag specific pentru reproducibilitate.
+          Imagine curentă: {{ request.object.spec.containers[].image }}
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+
+---
+# =============================================================================
+# POLITICĂ: Require Image Digest (opțional - pentru securitate maximă)
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-digest
+  annotations:
+    policies.kyverno.io/title: Require Image Digest
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Recomandă utilizarea digest-urilor de imagine pentru imutabilitate.
+      Acest lucru garantează că exact aceeași imagine este folosită.
+spec:
+  # Doar Audit - aceasta este o recomandare, nu o cerință strictă
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-digest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - prod  # Doar în producție
+      validate:
+        message: >-
+          Pentru producție, se recomandă utilizarea digest-urilor de imagine
+          (ex: image@sha256:abc123...) pentru a garanta imutabilitatea.
+        pattern:
+          spec:
+            containers:
+              - image: "*@sha256:*"

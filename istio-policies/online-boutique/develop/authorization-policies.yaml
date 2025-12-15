@@ -1,0 +1,313 @@
+# =============================================================================
+# authorization-policies.yaml (develop)
+# AuthorizationPolicies pentru Online Boutique - Nivel L7 (HTTP/gRPC)
+# =============================================================================
+# Aceste politici complementează NetworkPolicies (L3/L4) oferind
+# control granular la nivel de aplicație (metode HTTP, paths, headers)
+# =============================================================================
+
+---
+# =============================================================================
+# FRONTEND
+# Acceptă trafic de la:
+# - NGINX Ingress Controller
+# - Istio Ingress Gateway
+# - Loadgenerator
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: frontend-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  action: ALLOW
+  rules:
+    # Permite de la NGINX Ingress namespace
+    - from:
+        - source:
+            namespaces: ["ingress-nginx"]
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            ports: ["8080"]
+    
+    # Permite de la Istio Ingress Gateway
+    - from:
+        - source:
+            namespaces: ["istio-ingress", "istio-system"]
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            ports: ["8080"]
+    
+    # Permite de la loadgenerator
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/loadgenerator"]
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            ports: ["8080"]
+    
+    # Permite health checks de la Kubernetes (kubelet)
+    - from:
+        - source:
+            namespaces: ["kube-system"]
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/healthz", "/_healthz", "/readyz"]
+
+---
+# =============================================================================
+# CHECKOUTSERVICE
+# Acceptă doar de la frontend
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: checkoutservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: checkoutservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/frontend"]
+      to:
+        - operation:
+            # gRPC folosește POST
+            methods: ["POST"]
+            ports: ["5050"]
+
+---
+# =============================================================================
+# CARTSERVICE
+# Acceptă de la frontend și checkoutservice
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: cartservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: cartservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/develop/sa/frontend"
+              - "cluster.local/ns/develop/sa/checkoutservice"
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["7070"]
+
+---
+# =============================================================================
+# PRODUCTCATALOGSERVICE
+# Acceptă de la frontend, checkoutservice, recommendationservice
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: productcatalogservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: productcatalogservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/develop/sa/frontend"
+              - "cluster.local/ns/develop/sa/checkoutservice"
+              - "cluster.local/ns/develop/sa/recommendationservice"
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["3550"]
+
+---
+# =============================================================================
+# CURRENCYSERVICE
+# Acceptă de la frontend și checkoutservice
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: currencyservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: currencyservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/develop/sa/frontend"
+              - "cluster.local/ns/develop/sa/checkoutservice"
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["7000"]
+
+---
+# =============================================================================
+# RECOMMENDATIONSERVICE
+# Acceptă doar de la frontend
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: recommendationservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: recommendationservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/frontend"]
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["8080"]
+
+---
+# =============================================================================
+# ADSERVICE
+# Acceptă doar de la frontend
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: adservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: adservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/frontend"]
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["9555"]
+
+---
+# =============================================================================
+# SHIPPINGSERVICE
+# Acceptă de la frontend și checkoutservice
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: shippingservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: shippingservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/develop/sa/frontend"
+              - "cluster.local/ns/develop/sa/checkoutservice"
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["50051"]
+
+---
+# =============================================================================
+# PAYMENTSERVICE
+# Acceptă DOAR de la checkoutservice - serviciu sensibil
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: paymentservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: paymentservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # STRICT: doar checkoutservice poate accesa
+            principals: ["cluster.local/ns/develop/sa/checkoutservice"]
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["50051"]
+
+---
+# =============================================================================
+# EMAILSERVICE
+# Acceptă doar de la checkoutservice
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: emailservice-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: emailservice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/checkoutservice"]
+      to:
+        - operation:
+            methods: ["POST"]
+            ports: ["5000"]
+
+---
+# =============================================================================
+# REDIS-CART
+# Redis nu are sidecar Istio implicit, dar dacă îl injectezi:
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: redis-cart-policy
+  namespace: develop
+spec:
+  selector:
+    matchLabels:
+      app: redis-cart
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/develop/sa/cartservice"]
+      to:
+        - operation:
+            # Redis protocol, nu HTTP
+            ports: ["6379"]

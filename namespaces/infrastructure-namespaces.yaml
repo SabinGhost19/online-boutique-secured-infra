@@ -1,0 +1,97 @@
+# =============================================================================
+# Namespace-uri pentru infrastructură și aplicații
+# =============================================================================
+
+---
+# Namespace pentru Istio Control Plane
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    # Label-uri standard Kubernetes
+    kubernetes.io/metadata.name: istio-system
+    # Label pentru identificare
+    app.kubernetes.io/managed-by: manual
+    purpose: service-mesh
+
+---
+# Namespace pentru mediul de Development
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: develop
+  labels:
+    kubernetes.io/metadata.name: develop
+    # IMPORTANT: Acest label activează injecția automată de sidecar Istio
+    istio-injection: enabled
+    # Label-uri pentru identificare
+    environment: development
+    app.kubernetes.io/managed-by: argocd
+    # Label pentru NetworkPolicies
+    networking/allow-internet-egress: "false"
+
+---
+# Namespace pentru mediul de Production
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    kubernetes.io/metadata.name: prod
+    # IMPORTANT: Acest label activează injecția automată de sidecar Istio
+    istio-injection: enabled
+    # Label-uri pentru identificare
+    environment: production
+    app.kubernetes.io/managed-by: argocd
+    # Label pentru NetworkPolicies
+    networking/allow-internet-egress: "false"
+  annotations:
+    # Anotări pentru informații adiționale
+    description: "Production environment - handle with care"
+
+---
+# Namespace pentru Kyverno Policy Engine
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    kubernetes.io/metadata.name: kyverno
+    app.kubernetes.io/managed-by: helm
+    # NU activăm Istio injection pentru Kyverno
+    istio-injection: disabled
+
+---
+# Namespace pentru ArgoCD
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    kubernetes.io/metadata.name: argocd
+    app.kubernetes.io/managed-by: helm
+    # NU activăm Istio injection pentru ArgoCD
+    istio-injection: disabled
+
+---
+# Namespace pentru Monitoring (Prometheus, Grafana)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring-online-boutique
+  labels:
+    kubernetes.io/metadata.name: monitoring-online-boutique
+    app.kubernetes.io/managed-by: helm
+    # Opțional: poți activa Istio pentru monitoring
+    istio-injection: disabled
+    purpose: observability
+
+---
+# Namespace pentru Sealed Secrets Controller (opțional - poate fi în kube-system)
+# apiVersion: v1
+# kind: Namespace
+# metadata:
+#   name: sealed-secrets
+#   labels:
+#     kubernetes.io/metadata.name: sealed-secrets

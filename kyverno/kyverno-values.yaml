@@ -1,0 +1,189 @@
+# =============================================================================
+# kyverno-values.yaml
+# Configurație Kyverno pentru High Availability
+# =============================================================================
+
+# =============================================================================
+# ADMISSION CONTROLLER
+# Componenta principală care interceptează API requests
+# =============================================================================
+admissionController:
+  # Replici pentru HA
+  replicas: 3
+  
+  # Resources
+  container:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  
+  # Anti-affinity pentru distribuție pe noduri diferite
+  antiAffinity:
+    enabled: true
+  
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  # Service Account
+  serviceAccount:
+    create: true
+
+# =============================================================================
+# BACKGROUND CONTROLLER
+# Procesează politici în background (generate, mutate existing)
+# =============================================================================
+backgroundController:
+  replicas: 2
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  
+  serviceAccount:
+    create: true
+
+# =============================================================================
+# CLEANUP CONTROLLER
+# Curăță resurse vechi și temporare
+# =============================================================================
+cleanupController:
+  replicas: 2
+  
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  
+  serviceAccount:
+    create: true
+
+# =============================================================================
+# REPORTS CONTROLLER
+# Generează rapoarte de conformitate
+# =============================================================================
+reportsController:
+  replicas: 2
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  
+  serviceAccount:
+    create: true
+
+# =============================================================================
+# FEATURES
+# =============================================================================
+features:
+  # Permite PolicyExceptions pentru excepții granulare
+  policyExceptions:
+    enabled: true
+    namespace: ""  # Gol = toate namespace-urile
+  
+  # Logging configuration
+  logging:
+    format: text  # text sau json
+    verbosity: 2  # 0-6
+  
+  # Admission reports
+  admissionReports:
+    enabled: true
+  
+  # Auto-update webhooks
+  autoUpdateWebhooks:
+    enabled: true
+  
+  # Force mutate existing resources
+  forceFailurePolicyIgnore:
+    enabled: false
+
+# =============================================================================
+# WEBHOOKS
+# =============================================================================
+webhooksCleanup:
+  enabled: true
+  # Cât timp să păstreze istoricul
+  # deleteAfterSeconds: 86400  # 24 ore
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+config:
+  # Resource filters - exclude anumite resurse din procesare
+  resourceFilters:
+    - '[Event,*,*]'
+    - '[*,kube-system,*]'
+    - '[*,kube-public,*]'
+    - '[*,kube-node-lease,*]'
+    - '[*,kyverno,*]'
+    # Exclude Istio system
+    - '[*,istio-system,*]'
+    # Exclude ArgoCD
+    - '[*,argocd,*]'
+  
+  # Webhook annotations
+  webhooks:
+    - objectSelector:
+        matchExpressions:
+          - key: kyverno.io/policy-managed
+            operator: DoesNotExist
+
+# =============================================================================
+# EXCLUDES
+# =============================================================================
+# Grupuri de utilizatori/service accounts excluse de la politici
+excludedGroups:
+  - system:masters
+  - system:serviceaccounts:kube-system
+  - system:serviceaccounts:kyverno
+
+excludedUsernames:
+  - system:kube-scheduler
+  - system:kube-controller-manager
+  - system:kube-proxy
+
+# =============================================================================
+# CLEANUP
+# =============================================================================
+cleanupJobs:
+  # Curăță admission reports vechi
+  admissionReports:
+    enabled: true
+    schedule: "0 */6 * * *"  # La fiecare 6 ore
+    threshold: 10000
+  
+  # Curăță cluster admission reports
+  clusterAdmissionReports:
+    enabled: true
+    schedule: "0 */6 * * *"
+    threshold: 10000
+
+# =============================================================================
+# GRAFANA DASHBOARD (dacă ai Grafana instalat)
+# =============================================================================
+grafana:
+  enabled: false  # Activează dacă ai Grafana și vrei dashboard Kyverno
+  annotations: {}
+
+# =============================================================================
+# SERVICE MONITOR (pentru Prometheus Operator)
+# =============================================================================
+serviceMonitor:
+  enabled: false  # Activează dacă ai Prometheus Operator

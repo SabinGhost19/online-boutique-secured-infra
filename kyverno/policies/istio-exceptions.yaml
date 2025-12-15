@@ -1,0 +1,173 @@
+# =============================================================================
+# istio-exceptions.yaml
+# Excepții pentru componente Istio care au nevoie de privilegii speciale
+# =============================================================================
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: istio-sidecar-exceptions
+  annotations:
+    policies.kyverno.io/title: Istio Sidecar Exceptions
+    policies.kyverno.io/category: Istio
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Creează excepții pentru Istio sidecar și init containers care
+      necesită capabilities speciale pentru a funcționa corect.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    # =========================================================================
+    # Exclude Istio proxy de la anumite verificări
+    # =========================================================================
+    - name: exclude-istio-proxy-capabilities
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+      preconditions:
+        all:
+          # Aplică doar la poduri cu Istio sidecar
+          - key: "{{ request.object.spec.containers[?(@.name=='istio-proxy')] | length(@) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: "Istio proxy poate avea setări speciale de securitate."
+        # Această regulă permite explicit istio-proxy
+        deny:
+          conditions:
+            # Nu nega nimic - permite tot pentru poduri cu istio-proxy
+            all:
+              - key: "{{ request.object.spec.containers[?(@.name=='istio-proxy')] | length(@) }}"
+                operator: Equals
+                value: -1  # Condiție care nu se va îndeplini niciodată
+
+---
+# =============================================================================
+# PolicyException pentru Istio init containers
+# =============================================================================
+# Aceasta este metoda recomandată în Kyverno 1.9+ pentru excepții
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: istio-init-exception
+  namespace: kyverno
+spec:
+  # Excepție pentru politica Pod Security Restricted
+  exceptions:
+    - policyName: pod-security-restricted
+      ruleNames:
+        - restricted-latest
+        - autogen-restricted-latest
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - develop
+            - prod
+          # Match poduri care au istio-init container
+          selector:
+            matchExpressions:
+              - key: security.istio.io/tlsMode
+                operator: Exists
+  conditions:
+    any:
+      # Permite excepție doar pentru containere Istio
+      - key: "{{ request.object.spec.initContainers[?(@.name=='istio-init')] | length(@) }}"
+        operator: GreaterThan
+        value: 0
+
+---
+# =============================================================================
+# PolicyException pentru Istio CNI (dacă este folosit)
+# =============================================================================
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: istio-cni-exception
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: disallow-privilege-escalation
+      ruleNames:
+        - disallow-privilege-escalation
+    - policyName: disallow-host-namespaces
+      ruleNames:
+        - host-namespaces
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - istio-system
+          selector:
+            matchLabels:
+              k8s-app: istio-cni-node
+
+---
+# =============================================================================
+# PolicyException pentru Gateway pods
+# =============================================================================
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: istio-gateway-exception
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-resource-limits
+      ruleNames:
+        - require-cpu-memory-limits
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+          namespaces:
+            - istio-system
+            - istio-ingress
+          selector:
+            matchLabels:
+              istio: ingressgateway
+
+---
+# =============================================================================
+# Cluster Policy pentru a exclude Istio namespaces complet
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: bypass-istio-system
+  annotations:
+    policies.kyverno.io/title: Bypass Istio System Namespace
+    policies.kyverno.io/description: >-
+      Permite toate operațiunile în istio-system namespace.
+      Istio control plane necesită privilegii speciale.
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: bypass-istio-system
+      match:
+        any:
+          - resources:
+              kinds:
+                - "*"
+              namespaces:
+                - istio-system
+      validate:
+        message: "Istio system namespace bypass"
+        # Validare care trece întotdeauna
+        pattern:
+          metadata:
+            name: "*"

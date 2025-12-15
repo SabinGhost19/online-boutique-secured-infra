@@ -1,0 +1,195 @@
+# =============================================================================
+# allow-istio-control-plane.yaml
+# Permite comunicarea cu Istio control plane (istiod)
+# ESENȚIALĂ: Sidecars au nevoie să comunice cu istiod pentru:
+#   - xDS (configurație)
+#   - Certificat renewal (mTLS)
+#   - Telemetrie
+# =============================================================================
+
+---
+# Allow Istio pentru develop
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: develop
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: istio
+    policy-type: allow-egress
+spec:
+  # Se aplică la toate podurile (toate au sidecar)
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Permite egress către istio-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        # istiod xDS (Envoy configuration)
+        - protocol: TCP
+          port: 15010
+        - protocol: TCP
+          port: 15012
+        # istiod webhook
+        - protocol: TCP
+          port: 15017
+        # istiod metrics
+        - protocol: TCP
+          port: 15014
+        # Citadel (certificate management) - legacy
+        - protocol: TCP
+          port: 8060
+    
+    # Permite comunicarea cu Kubernetes API (pentru service discovery)
+    - to:
+        - ipBlock:
+            # Kubernetes API server - ajustează pentru cluster-ul tău
+            # Poți găsi IP-ul cu: kubectl get svc kubernetes -o jsonpath='{.spec.clusterIP}'
+            cidr: 10.96.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Allow Istio pentru prod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: network-policy
+    app.kubernetes.io/component: istio
+    policy-type: allow-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15010
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15017
+        - protocol: TCP
+          port: 15014
+        - protocol: TCP
+          port: 8060
+    - to:
+        - ipBlock:
+            cidr: 10.96.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Allow sidecar-to-sidecar communication în același namespace
+# Necesar pentru mTLS între servicii
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-sidecar-traffic
+  namespace: develop
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Permite trafic de la orice pod din același namespace
+    # Porturile Envoy pentru mTLS
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 15006  # Inbound listener
+        - protocol: TCP
+          port: 15001  # Outbound listener
+        - protocol: TCP
+          port: 15090  # Prometheus metrics
+  egress:
+    # Permite egress către alte poduri din namespace
+    - to:
+        - podSelector: {}
+
+---
+# Același pentru prod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-sidecar-traffic
+  namespace: prod
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 15006
+        - protocol: TCP
+          port: 15001
+        - protocol: TCP
+          port: 15090
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# Allow monitoring scraping (Prometheus)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: develop
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Permite Prometheus să scrape metrici
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring-online-boutique
+      ports:
+        - protocol: TCP
+          port: 15090  # Envoy stats
+        - protocol: TCP
+          port: 15020  # Merged Prometheus metrics
+
+---
+# Același pentru prod
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: prod
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring-online-boutique
+      ports:
+        - protocol: TCP
+          port: 15090
+        - protocol: TCP
+          port: 15020

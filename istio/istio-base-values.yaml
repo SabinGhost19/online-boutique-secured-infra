@@ -1,0 +1,25 @@
+# =============================================================================
+# istio-base-values.yaml
+# Configurație pentru istio-base chart (CRDs și resurse de bază)
+# =============================================================================
+
+# defaultRevision setează revision-ul implicit pentru Istio
+# Folosit pentru canary upgrades și multi-version support
+# "default" înseamnă că aceasta este instalarea principală
+defaultRevision: "default"
+
+# Activează sau dezactivează validarea CRD-urilor
+# În producție, păstrați true pentru a preveni configurații invalide
+enableCRDTemplates: true
+
+# Global settings care se propagă la alte chart-uri
+global:
+  # Namespace-ul unde va fi instalat Istio
+  istioNamespace: istio-system
+  
+  # Configurație pentru Image Pull Policy
+  imagePullPolicy: IfNotPresent
+  
+  # Logging level pentru componente
+  logging:
+    level: "default:info"

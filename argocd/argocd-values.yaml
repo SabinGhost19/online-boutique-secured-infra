@@ -1,0 +1,310 @@
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
+global:
+  # Image pentru toate componentele
+  image:
+    repository: quay.io/argoproj/argocd
+    tag: ""  # Folosește tag-ul implicit al chart-ului
+    imagePullPolicy: IfNotPresent
+  
+  # Logging
+  logging:
+    format: json
+    level: info
+  
+  # Security Context default
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+# =============================================================================
+# CONFIGS (ConfigMaps și Secrets)
+# =============================================================================
+configs:
+  # ConfigMap cu setări generale
+  cm:
+    # Timeout pentru operațiuni
+    timeout.reconciliation: 180s
+    
+    # Kustomize version
+    kustomize.buildOptions: "--enable-helm"
+    
+    # URL pentru UI (setează dacă ai domain)
+    # url: https://argocd.your-domain.com
+    
+    # Dex configuration (OAuth)
+    # dex.config: |
+    #   connectors:
+    #     - type: github
+    #       id: github
+    #       name: GitHub
+    #       config:
+    #         clientID: $dex.github.clientID
+    #         clientSecret: $dex.github.clientSecret
+    #         orgs:
+    #           - name: your-org
+    
+    # Resource customizations pentru Istio
+    resource.customizations: |
+      networking.istio.io/VirtualService:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          hs.message = ""
+          return hs
+      security.istio.io/AuthorizationPolicy:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          hs.message = ""
+          return hs
+      security.istio.io/PeerAuthentication:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          hs.message = ""
+          return hs
+      bitnami.com/SealedSecret:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          hs.message = ""
+          if obj.status ~= nil then
+            if obj.status.conditions ~= nil then
+              for i, condition in ipairs(obj.status.conditions) do
+                if condition.type == "Synced" and condition.status == "False" then
+                  hs.status = "Degraded"
+                  hs.message = condition.message
+                end
+              end
+            end
+          end
+          return hs
+  
+  # RBAC configuration
+  rbac:
+    # Policy default: role:readonly pentru utilizatori non-admin
+    policy.default: role:readonly
+    
+    # CSV policy rules
+    policy.csv: |
+      # Admin group
+      g, admin, role:admin
+      
+      # Developer group - poate sync și view în develop namespace
+      p, role:developer, applications, get, develop/*, allow
+      p, role:developer, applications, sync, develop/*, allow
+      p, role:developer, applications, action/*, develop/*, allow
+      g, developer, role:developer
+      
+      # Viewer group - doar citire
+      p, role:viewer, applications, get, */*, allow
+      p, role:viewer, projects, get, *, allow
+      g, viewer, role:viewer
+    
+    # Scopes pentru grupuri
+    scopes: '[groups]'
+  
+  # Params pentru customizări adiționale
+  params:
+    # Server settings
+    server.insecure: false  # HTTPS enabled
+    server.basehref: /
+    server.rootpath: ""
+    
+    # Repo server settings
+    reposerver.parallelism.limit: 0  # No limit
+    
+    # Controller settings
+    controller.status.processors: 20
+    controller.operation.processors: 10
+    controller.self.heal.timeout.seconds: 5
+    controller.repo.server.timeout.seconds: 60
+
+# =============================================================================
+# CONTROLLER
+# =============================================================================
+controller:
+  # Replici (1 pentru single-instance, sau folosește HA mode)
+  replicas: 1
+  
+  # Resurse
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Metrics
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false  # Activează dacă ai Prometheus Operator
+  
+  # Container Security Context
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# SERVER
+# =============================================================================
+server:
+  # Replici
+  replicas: 2
+  
+  # Autoscaling
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+  
+  # Resurse
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  
+  # Service
+  service:
+    type: ClusterIP
+    # Dacă vrei NodePort:
+    # type: NodePort
+    # nodePortHttp: 30080
+    # nodePortHttps: 30443
+  
+  # Ingress
+  ingress:
+    enabled: false
+    # Activează pentru acces extern:
+    # enabled: true
+    # ingressClassName: nginx
+    # hostname: argocd.your-domain.com
+    # tls: true
+    # annotations:
+    #   nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    #   nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+  
+  # Container Security Context
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# REPO SERVER
+# =============================================================================
+repoServer:
+  # Replici
+  replicas: 2
+  
+  # Autoscaling
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+  
+  # Resurse
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Container Security Context
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# APPLICATION SET CONTROLLER
+# =============================================================================
+applicationSet:
+  # Enabled
+  enabled: true
+  
+  # Replici
+  replicas: 2
+  
+  # Resurse
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# =============================================================================
+# DEX (Identity Provider)
+# =============================================================================
+dex:
+  # Dezactivat implicit - activează pentru SSO
+  enabled: false
+  
+  # Resurse
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# =============================================================================
+# REDIS
+# =============================================================================
+redis:
+  # Resurse
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Redis HA (pentru producție)
+redis-ha:
+  enabled: false  # Activează pentru HA
+  # haproxy:
+  #   enabled: true
+
+# =============================================================================
+# NOTIFICATIONS CONTROLLER
+# =============================================================================
+notifications:
+  enabled: true
+  
+  # Configurație pentru notificări
+  # Definește triggers și templates în ConfigMap
+  notificationsController:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

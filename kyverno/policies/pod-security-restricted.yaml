@@ -1,0 +1,305 @@
+# =============================================================================
+# pod-security-restricted.yaml
+# Implementează Pod Security Standards - Restricted Profile
+# =============================================================================
+# Documentație: https://kubernetes.io/docs/concepts/security/pod-security-standards/
+# =============================================================================
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: pod-security-restricted
+  annotations:
+    # Metadata pentru documentație
+    policies.kyverno.io/title: Pod Security Standards (Restricted)
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/minversion: 1.8.0
+    policies.kyverno.io/description: >-
+      Implementează Pod Security Standards la nivelul Restricted.
+      Aceasta este cea mai strictă politică și necesită pods să ruleze
+      cu setări de securitate restrictive.
+spec:
+  # ---------------------------------------------------------------------------
+  # VALIDATION FAILURE ACTION
+  # ---------------------------------------------------------------------------
+  # Audit = loghează violările dar nu blochează (pentru început)
+  # Enforce = blochează podurile care nu respectă politica
+  # SCHIMBĂ LA 'Enforce' DUPĂ TESTARE
+  validationFailureAction: Audit
+  
+  # ---------------------------------------------------------------------------
+  # BACKGROUND SCANNING
+  # ---------------------------------------------------------------------------
+  # Scanează și resursele existente, nu doar cele noi
+  background: true
+  
+  # ---------------------------------------------------------------------------
+  # RULES
+  # ---------------------------------------------------------------------------
+  rules:
+    # =========================================================================
+    # RULE 1: Enforce Restricted Pod Security Standards
+    # =========================================================================
+    - name: restricted-latest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      # Exclude namespace-uri de sistem
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - istio-system
+                - kyverno
+                - argocd
+                - monitoring-online-boutique
+      validate:
+        # Folosește Pod Security Admission built-in
+        podSecurity:
+          # Level: restricted, baseline, privileged
+          level: restricted
+          # Versiune: latest sau versiune specifică (v1.24, v1.25, etc.)
+          version: latest
+          # Excepții pentru Istio proxy
+          exclude:
+            # Istio init containers au nevoie de NET_ADMIN și NET_RAW
+            - controlName: Capabilities
+              images:
+                - "*/istio/proxyv2:*"
+                - "docker.io/istio/proxyv2:*"
+                - "gcr.io/istio-release/proxyv2:*"
+              restrictedField: spec.initContainers[*].securityContext.capabilities.add
+              values:
+                - NET_ADMIN
+                - NET_RAW
+
+---
+# =============================================================================
+# POLITICĂ SEPARATĂ: Disable Privilege Escalation
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privilege-escalation
+  annotations:
+    policies.kyverno.io/title: Disallow Privilege Escalation
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Blochează containere care pot escalada privilegii prin setarea
+      allowPrivilegeEscalation=false pe toate containerele.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      validate:
+        message: >-
+          Privilege escalation este interzisă. Setează 
+          securityContext.allowPrivilegeEscalation=false pe toate containerele.
+        pattern:
+          spec:
+            # Verifică toate tipurile de containere
+            =(ephemeralContainers):
+              - securityContext:
+                  allowPrivilegeEscalation: false
+            =(initContainers):
+              - =(securityContext):
+                  =(allowPrivilegeEscalation): false
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+
+---
+# =============================================================================
+# POLITICĂ SEPARATĂ: Require Run As Non-Root
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-non-root
+  annotations:
+    policies.kyverno.io/title: Require Run As Non-Root
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Forțează toate containerele să ruleze ca non-root user.
+      Aceasta previne atacuri care exploatează privilegiile root.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - kyverno
+      validate:
+        message: >-
+          Containerele trebuie să ruleze ca non-root. Setează 
+          spec.securityContext.runAsNonRoot=true sau 
+          spec.containers[*].securityContext.runAsNonRoot=true
+        anyPattern:
+          # Pattern 1: runAsNonRoot la nivel de pod
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          # Pattern 2: runAsNonRoot la nivel de container
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true
+
+---
+# =============================================================================
+# POLITICĂ SEPARATĂ: Disallow Privileged Containers
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Blochează containerele privilegiate care au acces complet la host.
+spec:
+  validationFailureAction: Enforce  # ENFORCE - aceasta este critică
+  background: true
+  rules:
+    - name: disallow-privileged
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+      validate:
+        message: >-
+          Containerele privilegiate sunt interzise. 
+          Setează securityContext.privileged=false.
+        pattern:
+          spec:
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(privileged): false
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): false
+            containers:
+              - =(securityContext):
+                  =(privileged): false
+
+---
+# =============================================================================
+# POLITICĂ SEPARATĂ: Restrict Host Namespaces
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Blochează accesul la namespace-urile host (hostNetwork, hostIPC, hostPID).
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+      validate:
+        message: >-
+          Accesul la host namespaces este interzis. 
+          hostNetwork, hostIPC și hostPID trebuie să fie false.
+        pattern:
+          spec:
+            =(hostNetwork): false
+            =(hostIPC): false
+            =(hostPID): false
+
+---
+# =============================================================================
+# POLITICĂ SEPARATĂ: Restrict Volume Types
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-volume-types
+  annotations:
+    policies.kyverno.io/title: Restrict Volume Types
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Restricționează tipurile de volume permise la cele sigure.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: restrict-volume-types
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+      validate:
+        message: >-
+          Tipuri de volume interzise. Sunt permise doar: 
+          configMap, csi, downwardAPI, emptyDir, ephemeral, 
+          persistentVolumeClaim, projected, secret.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.volumes[].hostPath | length(@) }}"
+                operator: GreaterThan
+                value: 0

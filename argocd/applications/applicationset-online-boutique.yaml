@@ -1,0 +1,270 @@
+# =============================================================================
+# applicationset-online-boutique.yaml
+# ApplicationSet pentru deploy multi-environment al Online Boutique
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: online-boutique
+  namespace: argocd
+spec:
+  # Folosește Go templates
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  
+  # ==========================================================================
+  # GENERATORS
+  # Definește mediile și configurațiile lor
+  # ==========================================================================
+  generators:
+    - list:
+        elements:
+          # -------------------------------------------------------------------
+          # Environment: develop
+          # -------------------------------------------------------------------
+          - env: develop
+            namespace: develop
+            # Branch-ul Git pentru develop
+            targetRevision: develop
+            # Auto-sync enabled
+            autoSync: "true"
+            # Auto-prune enabled (șterge resurse removed din Git)
+            prune: "true"
+            # Self-heal (revert manual changes)
+            selfHeal: "true"
+            # Replica count
+            frontendReplicas: "1"
+            # Resource tier
+            resourceTier: "small"
+          
+          # -------------------------------------------------------------------
+          # Environment: prod
+          # -------------------------------------------------------------------
+          - env: prod
+            namespace: prod
+            # Branch-ul Git pentru prod
+            targetRevision: main
+            # Auto-sync DISABLED pentru prod (deploy manual)
+            autoSync: "false"
+            # Prune disabled (safety)
+            prune: "false"
+            # Self-heal enabled
+            selfHeal: "true"
+            # Replica count
+            frontendReplicas: "3"
+            # Resource tier
+            resourceTier: "large"
+  
+  # ==========================================================================
+  # TEMPLATE
+  # Definește cum arată Application pentru fiecare environment
+  # ==========================================================================
+  template:
+    metadata:
+      # Numele aplicației include environment-ul
+      name: 'online-boutique-{{ .env }}'
+      namespace: argocd
+      labels:
+        app.kubernetes.io/name: online-boutique
+        app.kubernetes.io/instance: '{{ .env }}'
+        environment: '{{ .env }}'
+      # Finalizator pentru cleanup
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      # Project assignment
+      project: '{{ .env }}'
+      
+      # ========================================================================
+      # SOURCE
+      # ========================================================================
+      source:
+        # Repository URL - MODIFICĂ cu repository-ul tău
+        repoURL: 'https://github.com/SabinGhost19/online-boutique-forked-securitycontext.git'
+        
+        # Branch/tag
+        targetRevision: '{{ .targetRevision }}'
+        
+        # Path către Helm chart-ul local
+        path: 'online-boutique/helm-chart'
+        
+        # Helm configuration
+        helm:
+          # Folosește values file specific environment-ului
+          valueFiles:
+            - values-{{ .env }}.yaml
+      
+      # ========================================================================
+      # DESTINATION
+      # ========================================================================
+      destination:
+        # Cluster (default = cluster-ul local)
+        server: https://kubernetes.default.svc
+        # Namespace
+        namespace: '{{ .namespace }}'
+      
+      # ========================================================================
+      # SYNC POLICY
+      # ========================================================================
+      syncPolicy:
+        # Automated sync (condiționat de environment)
+        {{- if eq .autoSync "true" }}
+        automated:
+          # Prune - șterge resurse care nu mai sunt în Git
+          prune: {{ .prune }}
+          # Self-heal - revert manual changes
+          selfHeal: {{ .selfHeal }}
+          # Allow empty - permite sync chiar dacă nu sunt resurse
+          allowEmpty: false
+        {{- end }}
+        
+        # Sync options
+        syncOptions:
+          # Creează namespace-ul dacă nu există
+          - CreateNamespace=true
+          # Validate=false pentru CRDs complexe
+          - Validate=false
+          # Replace vs Apply
+          - ApplyOutOfSyncOnly=true
+          # Server-side apply (mai bun pentru CRDs)
+          - ServerSideApply=true
+          # Respect ignore differences
+          - RespectIgnoreDifferences=true
+        
+        # Retry policy
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+      
+      # ========================================================================
+      # IGNORE DIFFERENCES
+      # ========================================================================
+      ignoreDifferences:
+        # Ignoră anumite field-uri care sunt modificate de controllere
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas  # Ignoră dacă HPA modifică replicas
+        - group: autoscaling
+          kind: HorizontalPodAutoscaler
+          jsonPointers:
+            - /status
+        # Ignoră status-ul pentru resurse Istio
+        - group: networking.istio.io
+          kind: VirtualService
+          jsonPointers:
+            - /status
+        - group: security.istio.io
+          kind: AuthorizationPolicy
+          jsonPointers:
+            - /status
+      
+      # ========================================================================
+      # REVISON HISTORY LIMIT
+      # ========================================================================
+      revisionHistoryLimit: 10
+
+---
+# =============================================================================
+# ApplicationSet pentru Infrastructure
+# Gestionează Istio, Kyverno, Monitoring
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infrastructure
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  
+  generators:
+    - list:
+        elements:
+          # Istio Base (CRDs)
+          - name: istio-base
+            namespace: istio-system
+            chart: base
+            repoURL: https://istio-release.storage.googleapis.com/charts
+            targetRevision: "1.24.0"
+            syncWave: "-3"
+            valuesFile: ""
+          
+          # Istio Control Plane
+          - name: istiod
+            namespace: istio-system
+            chart: istiod
+            repoURL: https://istio-release.storage.googleapis.com/charts
+            targetRevision: "1.24.0"
+            syncWave: "-2"
+            valuesFile: "istio/istiod-values.yaml"
+          
+          # Kiali
+          - name: kiali-operator
+            namespace: kiali-operator
+            chart: kiali-operator
+            repoURL: https://kiali.org/helm-charts
+            targetRevision: "2.1.0"
+            syncWave: "-1"
+            valuesFile: "observability/kiali-values.yaml"
+          
+          # Prometheus
+          - name: prometheus
+            namespace: monitoring-online-boutique
+            chart: prometheus
+            repoURL: https://prometheus-community.github.io/helm-charts
+            targetRevision: "25.8.0"
+            syncWave: "-1"
+            valuesFile: "observability/prometheus-values.yaml"
+          
+          # Grafana
+          - name: grafana
+            namespace: monitoring-online-boutique
+            chart: grafana
+            repoURL: https://grafana.github.io/helm-charts
+            targetRevision: "7.0.0"
+            syncWave: "-1"
+            valuesFile: "observability/grafana-values.yaml"
+  
+  template:
+    metadata:
+      name: 'infra-{{ .name }}'
+      namespace: argocd
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ .syncWave }}'
+      labels:
+        app.kubernetes.io/component: infrastructure
+    spec:
+      project: infrastructure
+      
+      source:
+        repoURL: '{{ .repoURL }}'
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .targetRevision }}'
+        helm:
+          releaseName: '{{ .name }}'
+          # Values din repository-ul GitOps
+          # valueFiles:
+          #   - '{{ .valuesFile }}'
+      
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
