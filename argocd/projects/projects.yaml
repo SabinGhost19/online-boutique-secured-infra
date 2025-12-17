@@ -39,6 +39,8 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: kube-system
       server: https://kubernetes.default.svc
+    - namespace: kiali-operator
+      server: https://kubernetes.default.svc
   
   # Cluster resource whitelist
   clusterResourceWhitelist:

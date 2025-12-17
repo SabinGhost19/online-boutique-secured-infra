@@ -64,7 +64,7 @@ spec:
       # ========================================================================
       source:
         # Repository URL - MODIFICĂ cu repository-ul tău
-        repoURL: 'https://github.com/SabinGhost19/online-boutique-forked-securitycontext.git'
+        repoURL: 'https://github.com/SabinGhost19/online-boutique-secured-infra.git'
         
         # Branch/tag
         targetRevision: '{{ .targetRevision }}'
