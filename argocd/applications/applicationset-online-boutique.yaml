@@ -28,10 +28,10 @@ spec:
             namespace: prod
             # Branch-ul Git pentru prod
             targetRevision: main
-            # Auto-sync DISABLED pentru prod (deploy manual)
-            autoSync: "false"
-            # Prune disabled (safety)
-            prune: "false"
+            # Auto-sync ENABLED pentru prod
+            autoSync: "true"
+            # Prune enabled
+            prune: "true"
             # Self-heal enabled
             selfHeal: "true"
             # Replica count
@@ -91,6 +91,10 @@ spec:
       # SYNC POLICY
       # ========================================================================
       syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
         
         # Sync options
         syncOptions:
