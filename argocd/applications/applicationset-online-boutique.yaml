@@ -91,16 +91,6 @@ spec:
       # SYNC POLICY
       # ========================================================================
       syncPolicy:
-        # Automated sync (condiționat de environment)
-        {{- if eq .autoSync "true" }}
-        automated:
-          # Prune - șterge resurse care nu mai sunt în Git
-          prune: {{ .prune }}
-          # Self-heal - revert manual changes
-          selfHeal: {{ .selfHeal }}
-          # Allow empty - permite sync chiar dacă nu sunt resurse
-          allowEmpty: false
-        {{- end }}
         
         # Sync options
         syncOptions:
