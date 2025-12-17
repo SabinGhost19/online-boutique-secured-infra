@@ -127,6 +127,7 @@ frontend:
     hosts:
     - "*"
     gateway:
+      create: false
       name: asm-ingressgateway
       namespace: asm-ingress
       labelKey: asm

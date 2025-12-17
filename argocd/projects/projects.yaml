@@ -11,7 +11,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: infrastructure
+  name: online-boutique-infra-project
   namespace: argocd
   # Finalizator pentru a preveni ștergerea accidentală
   finalizers:
@@ -67,86 +67,7 @@ spec:
         - viewer
 
 ---
-# =============================================================================
-# PROJECT: develop
-# Pentru mediul de development
-# =============================================================================
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: develop
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  description: "Mediu de development - Online Boutique"
-  
-  # Repository-uri permise
-  sourceRepos:
-    - '*'
-    # - 'https://github.com/YOUR-ORG/gitops-repo.git'
-    # - 'https://github.com/GoogleCloudPlatform/microservices-demo.git'
-  
-  # Destinații - doar namespace-ul develop
-  destinations:
-    - namespace: develop
-      server: https://kubernetes.default.svc
-  
-  # NU permite cluster resources în develop
-  clusterResourceWhitelist: []
-  
-  # Namespace resources permise
-  namespaceResourceWhitelist:
-    - group: ''
-      kind: ConfigMap
-    - group: ''
-      kind: Secret
-    - group: ''
-      kind: Service
-    - group: ''
-      kind: ServiceAccount
-    - group: apps
-      kind: Deployment
-    - group: apps
-      kind: StatefulSet
-    - group: networking.k8s.io
-      kind: NetworkPolicy
-    - group: networking.k8s.io
-      kind: Ingress
-    - group: autoscaling
-      kind: HorizontalPodAutoscaler
-    - group: policy
-      kind: PodDisruptionBudget
-    # Istio resources
-    - group: networking.istio.io
-      kind: VirtualService
-    - group: networking.istio.io
-      kind: DestinationRule
-    - group: networking.istio.io
-      kind: Gateway
-    - group: security.istio.io
-      kind: AuthorizationPolicy
-    - group: security.istio.io
-      kind: PeerAuthentication
-    # Sealed Secrets
-    - group: bitnami.com
-      kind: SealedSecret
-  
-  # Roluri
-  roles:
-    - name: developer
-      description: "Developer role - full access în develop"
-      policies:
-        - p, proj:develop:developer, applications, *, develop/*, allow
-      groups:
-        - developer
-    
-    - name: readonly
-      description: "Read-only access"
-      policies:
-        - p, proj:develop:readonly, applications, get, develop/*, allow
-      groups:
-        - viewer
+
 
 ---
 # =============================================================================
@@ -156,7 +77,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: prod
+  name: online-boutique-project
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -248,21 +169,17 @@ spec:
         - developer
         - viewer
 
----
-# =============================================================================
-# PROJECT: default (override)
-# Restricționează project-ul default
-# =============================================================================
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: default
-  namespace: argocd
-spec:
-  description: "Default project - restricționat"
-  
-  sourceRepos: []  # Nu permite nimic în default
-  destinations: [] # Nu permite nimic în default
-  
-  clusterResourceWhitelist: []
-  namespaceResourceWhitelist: []
+    # Exemplu de rol custom: Operator
+    # Poate da Sync (deploy) și Restart, dar nu poate modifica setările aplicației
+    - name: operator
+      description: "Operator role - Sync & Restart allowed, No Edit/Delete"
+      policies:
+        - p, proj:prod:operator, applications, get, prod/*, allow
+        - p, proj:prod:operator, applications, sync, prod/*, allow
+        - p, proj:prod:operator, applications, action/*, prod/*, allow
+        - p, proj:prod:operator, applications, delete, prod/*, deny
+        - p, proj:prod:operator, applications, create, prod/*, deny
+      groups:
+        - operator
+
+

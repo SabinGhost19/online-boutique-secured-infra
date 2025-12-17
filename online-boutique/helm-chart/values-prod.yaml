@@ -9,6 +9,7 @@ frontend:
     hosts:
       - "shop.ggdevs.site" # Domeniu de producție
     gateway:
+      create: true
       name: online-boutique-gateway
       namespace: prod
       labelKey: istio

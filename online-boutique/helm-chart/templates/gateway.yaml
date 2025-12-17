@@ -1,0 +1,19 @@
+{{- if and .Values.frontend.virtualService.create .Values.frontend.virtualService.gateway.create }}
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: {{ .Values.frontend.virtualService.gateway.name }}
+  namespace: {{ .Values.frontend.virtualService.gateway.namespace }}
+spec:
+  selector:
+    {{ .Values.frontend.virtualService.gateway.labelKey }}: {{ .Values.frontend.virtualService.gateway.labelValue }}
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    {{- with .Values.frontend.virtualService.hosts }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

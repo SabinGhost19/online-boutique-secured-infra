@@ -20,24 +20,7 @@ spec:
   generators:
     - list:
         elements:
-          # -------------------------------------------------------------------
-          # Environment: develop
-          # -------------------------------------------------------------------
-          - env: develop
-            namespace: develop
-            # Branch-ul Git pentru develop
-            targetRevision: develop
-            # Auto-sync enabled
-            autoSync: "true"
-            # Auto-prune enabled (șterge resurse removed din Git)
-            prune: "true"
-            # Self-heal (revert manual changes)
-            selfHeal: "true"
-            # Replica count
-            frontendReplicas: "1"
-            # Resource tier
-            resourceTier: "small"
-          
+
           # -------------------------------------------------------------------
           # Environment: prod
           # -------------------------------------------------------------------
@@ -74,7 +57,7 @@ spec:
         - resources-finalizer.argocd.argoproj.io
     spec:
       # Project assignment
-      project: '{{ .env }}'
+      project: online-boutique-project
       
       # ========================================================================
       # SOURCE
@@ -202,6 +185,15 @@ spec:
             targetRevision: "1.24.0"
             syncWave: "-2"
             valuesFile: "istio/istiod-values.yaml"
+
+          # Istio Ingress Gateway
+          - name: istio-ingressgateway
+            namespace: istio-system
+            chart: gateway
+            repoURL: https://istio-release.storage.googleapis.com/charts
+            targetRevision: "1.24.0"
+            syncWave: "-1"
+            valuesFile: "istio/gateway-values.yaml"
           
           # Kiali
           - name: kiali-operator
@@ -239,7 +231,7 @@ spec:
       labels:
         app.kubernetes.io/component: infrastructure
     spec:
-      project: infrastructure
+      project: online-boutique-infra-project
       
       source:
         repoURL: '{{ .repoURL }}'
