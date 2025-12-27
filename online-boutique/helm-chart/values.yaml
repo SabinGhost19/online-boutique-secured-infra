@@ -17,9 +17,9 @@
 # Declare variables to be passed into your templates.
 
 images:
-  repository: us-central1-docker.pkg.dev/google-samples/microservices-demo
+  repository: ghcr.io/sabinghost19/online-boutique-forked-securitycontext
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "sha-56e592cb0e3f5b5cffba5342751d31a18d362c9b"
 
 serviceAccounts:
   # Specifies whether service accounts should be created.
